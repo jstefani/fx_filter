@@ -31,8 +31,12 @@ function FxFilter:add_params()
   FxFilter:add_option("fx_filter_lfo_shape", "lfo shape", "lfo_shape",
     {"sine", "triangle", "saw", "square", "s&h", "noise"}, 1)
   FxFilter:add_taper("fx_filter_lfo_rate", "lfo rate", "lfo_rate", 0.01, 20, 1, 3, "Hz")
-  FxFilter:add_control("fx_filter_lfo_depth", "lfo > cutoff", "lfo_depth",
-    controlspec.new(-4, 4, 'lin', 0.05, 0, "oct"))
+  -- UI shows -127..127, SC side takes -4..4 octaves.
+  params:add_control("fx_filter_lfo_depth", "lfo > cutoff",
+    controlspec.new(-127, 127, 'lin', 1, 0, ""))
+  params:set_action("fx_filter_lfo_depth", function(val)
+    osc.send({ "localhost", 57120 }, FxFilter.subpath .. "/set", { "lfo_depth", val / 127 * 4 })
+  end)
 end
 
 mod.hook.register("script_pre_init", "filter mod pre init", function()

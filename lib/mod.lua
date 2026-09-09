@@ -1,43 +1,45 @@
--- lib/mod.lua
--- fx_filter integration for sixolet's fx mod framework
+-- fx_filter: DFM1 filter plugin for sixolet's fx mod framework.
 
 local fx = require("fx/lib/fx")
-local mod = {}
+local mod = require 'core/mods'
 
--- Define default parameters and control specifications
-local params_def = {
-  { id = "cutoff",        name = "Cutoff",        spec = controlspec.new(20, 20000, 'exp', 0, 1000, "Hz") },
-  { id = "res",           name = "Resonance",     spec = controlspec.new(0, 1.2, 'lin', 0.01, 0.1, "") },
-  { id = "type",          name = "Filter Type",   type = "option", options = { "Lowpass", "Highpass" }, default = 1 },
-  { id = "dfm_gain",      name = "DFM Input Gain",spec = controlspec.new(0.1, 8.0, 'lin', 0.05, 1.0, "") },
-  { id = "drive_mode",    name = "Tanh Drive Mode",type = "option", options = { "Off", "Pre-Filter", "Post-Filter" }, default = 1 },
-  { id = "drive_amount",  name = "Tanh Drive Amt",spec = controlspec.new(1.0, 8.0, 'lin', 0.05, 1.0, "") },
-  { id = "stereo_spread", name = "Stereo Spread", spec = controlspec.new(0.0, 1.0, 'lin', 0.01, 0.0, "") },
-  { id = "noise",         name = "Noise Level",   spec = controlspec.new(0.0, 0.005, 'lin', 0.0001, 0.0003, "") },
-  { id = "mix",           name = "Dry / Wet",     spec = controlspec.new(0.0, 1.0, 'lin', 0.01, 1.0, "") },
+local FxFilter = fx:new{
+  subpath = "/fx_filter"
 }
 
-function mod.init()
-  local node = fx.add_node("fx_filter", "FX Filter", "fx_filter")
-
-  params:add_group("fx_filter_group", "FX Filter", #params_def)
-
-  for _, p in ipairs(params_def) do
-    local param_id = "fx_filter_" .. p.id
-
-    if p.type == "option" then
-      params:add_option(param_id, p.name, p.options, p.default)
-      params:set_action(param_id, function(val)
-        -- SC expects 0-indexed options
-        node:set(p.id, val - 1)
-      end)
-    else
-      params:add_control(param_id, p.name, p.spec)
-      params:set_action(param_id, function(val)
-        node:set(p.id, val)
-      end)
-    end
-  end
+function FxFilter:add_params()
+  params:add_separator("fx_filter", "fx filter")
+  FxFilter:add_slot("fx_filter_slot", "slot")
+  FxFilter:add_control("fx_filter_cutoff", "cutoff", "cutoff",
+    controlspec.new(20, 20000, 'exp', 0, 1000, "Hz"))
+  FxFilter:add_control("fx_filter_res", "resonance", "res",
+    controlspec.new(0, 1.2, 'lin', 0.01, 0.1, ""))
+  FxFilter:add_option("fx_filter_type", "type", "type", {"lowpass", "highpass"}, 1)
+  FxFilter:add_taper("fx_filter_dfm_gain", "input gain", "dfm_gain", 0.1, 8, 1, 1, "")
+  FxFilter:add_option("fx_filter_drive_mode", "drive mode", "drive_mode",
+    {"off", "pre-filter", "post-filter"}, 1)
+  FxFilter:add_taper("fx_filter_drive_amount", "drive amount", "drive_amount", 1, 8, 1, 1, "")
+  FxFilter:add_control("fx_filter_stereo_spread", "stereo spread", "stereo_spread",
+    controlspec.new(0, 1, 'lin', 0.01, 0, ""))
+  FxFilter:add_control("fx_filter_noise", "noise", "noise",
+    controlspec.new(0, 0.005, 'lin', 0.0001, 0.0003, ""))
+  FxFilter:add_control("fx_filter_env_amount", "env > cutoff", "env_amount",
+    controlspec.new(-4, 4, 'lin', 0.05, 0, "oct"))
+  FxFilter:add_taper("fx_filter_env_sens", "env sensitivity", "env_sens", 0, 20, 2, 1, "")
+  FxFilter:add_taper("fx_filter_env_attack", "env attack", "env_attack", 0.001, 1, 0.01, 4, "s")
+  FxFilter:add_taper("fx_filter_env_release", "env release", "env_release", 0.01, 2, 0.2, 3, "s")
+  FxFilter:add_option("fx_filter_lfo_shape", "lfo shape", "lfo_shape",
+    {"sine", "triangle", "saw", "square", "s&h", "noise"}, 1)
+  FxFilter:add_taper("fx_filter_lfo_rate", "lfo rate", "lfo_rate", 0.01, 20, 1, 3, "Hz")
+  FxFilter:add_control("fx_filter_lfo_depth", "lfo > cutoff", "lfo_depth",
+    controlspec.new(-4, 4, 'lin', 0.05, 0, "oct"))
 end
 
-return mod
+mod.hook.register("script_pre_init", "filter mod pre init", function()
+  FxFilter:install()
+end)
+
+mod.hook.register("script_post_cleanup", "filter mod post cleanup", function()
+end)
+
+return FxFilter

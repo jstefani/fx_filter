@@ -1,57 +1,111 @@
-// fx_filter engine for norns fx framework
-// Upgraded with parameter smoothing, DC leakage protection,
-// dual-stage drive (DFM1 gain + tanh soft-clipping), and stereo spread.
+// fx_filter: DFM1 filter plugin for sixolet's fx mod framework.
+// Lives in the sclang class library (everything under ~/dust is compiled
+// as classes), so this file must only contain a class definition.
+//
+// Parameter smoothing, dual-stage tanh drive (pre or post filter),
+// stereo cutoff spread, input envelope follower and LFO on cutoff, DC leakage protection.
 
-SynthDef(\fx_filter, {
-    arg inBus, outBus,
-        cutoff = 1000,
-        res = 0.1,
-        dfm_gain = 1.0,
-        type = 0.0,
-        noise = 0.0003,
-        drive_amount = 1.0,
-        drive_mode = 0, // 0 = Off, 1 = Pre-Filter, 2 = Post-Filter
-        stereo_spread = 0.0,
-        mix = 1.0;
+FxFilter : FxBase {
+    *new {
+        var ret = super.newCopyArgs(nil, \none, (
+            cutoff: 1000,
+            res: 0.1,
+            dfm_gain: 1.0,
+            type: 1,        // Lua option index, 1 = lowpass, 2 = highpass
+            noise: 0.0003,
+            drive_mode: 1,  // Lua option index, 1 = off, 2 = pre, 3 = post
+            drive_amount: 1.0,
+            stereo_spread: 0.0,
+            env_amount: 0.0,
+            env_sens: 2.0,
+            env_attack: 0.01,
+            env_release: 0.2,
+            lfo_shape: 1,   // Lua option index: sine, tri, saw, square, s&h, noise
+            lfo_rate: 1.0,
+            lfo_depth: 0.0
+        ), nil, 1);
+        ^ret;
+    }
 
-    var inSig, procL, procR, filtSig, finalSig;
+    *initClass {
+        FxSetup.register(this.new);
+    }
 
-    // Parameter smoothing to eliminate zipper noise and clicks
-    var f_cutoff = Lag.kr(cutoff.clip(20, 20000), 0.03);
-    var r_res    = Lag.kr(res.clip(0.0, 1.2), 0.03);
-    var g_dfm    = Lag.kr(dfm_gain.clip(0.1, 10.0), 0.03);
-    var d_amt    = Lag.kr(drive_amount.clip(1.0, 10.0), 0.03);
-    var s_spread = Lag.kr(stereo_spread.clip(0.0, 1.0), 0.03);
-    var m_mix    = Lag.kr(mix.clip(0.0, 1.0), 0.02);
+    subPath {
+        ^"/fx_filter";
+    }
 
-    // Calculate stereo cutoff frequencies (offsetting L/R based on spread)
-    var freqL = (f_cutoff * (1 - (s_spread * 0.35))).clip(20, 20000);
-    var freqR = (f_cutoff * (1 + (s_spread * 0.35))).clip(20, 20000);
+    symbol {
+        ^\fxFilter;
+    }
 
-    // Tanh drive output compensation factor
-    var driveComp = 1 / (d_amt.sqrt);
+    addSynthdefs {
+        SynthDef(\fxFilter, { |inBus, outBus|
+            var inSig, procL, procR, filtSig;
 
-    inSig = In.ar(inBus, 2);
+            // Lua options are 1-indexed; DFM1 type and drive mode are 0-indexed.
+            var type       = \type.kr(1) - 1;
+            var driveMode  = \drive_mode.kr(1) - 1;
 
-    // Pre-Filter Drive Stage
-    procL = Select.ar(drive_mode >= 1, [inSig[0], (inSig[0] * d_amt).tanh * driveComp]);
-    procR = Select.ar(drive_mode >= 1, [inSig[1], (inSig[1] * d_amt).tanh * driveComp]);
+            // Smooth continuous params to kill zipper noise.
+            var cutoff  = Lag.kr(\cutoff.kr(1000).clip(20, 20000), 0.03);
+            var res     = Lag.kr(\res.kr(0.1).clip(0.0, 1.2), 0.03);
+            var dfmGain = Lag.kr(\dfm_gain.kr(1.0).clip(0.1, 10.0), 0.03);
+            var noise   = \noise.kr(0.0003).clip(0.0, 0.01);
+            var drive   = Lag.kr(\drive_amount.kr(1.0).clip(1.0, 10.0), 0.03);
+            var spread  = Lag.kr(\stereo_spread.kr(0.0).clip(0.0, 1.0), 0.03);
 
-    // DFM1 Filter Processing
-    procL = DFM1.ar(procL, freqL, r_res, g_dfm, type, noise);
-    procR = DFM1.ar(procR, freqR, r_res, g_dfm, type, noise);
+            // Envelope follower on the input, modulates cutoff in octaves.
+            var envAmt  = Lag.kr(\env_amount.kr(0.0).clip(-4.0, 4.0), 0.03);
+            var envSens = Lag.kr(\env_sens.kr(2.0).clip(0.0, 20.0), 0.03);
+            var envAtk  = \env_attack.kr(0.01).clip(0.001, 1.0);
+            var envRel  = \env_release.kr(0.2).clip(0.01, 2.0);
 
-    // Post-Filter Drive Stage (tames high self-oscillation peaks)
-    procL = Select.ar(drive_mode >= 2, [procL, (procL * d_amt).tanh * driveComp]);
-    procR = Select.ar(drive_mode >= 2, [procR, (procR * d_amt).tanh * driveComp]);
+            // LFO on cutoff, bipolar, depth in octaves.
+            var lfoShape = \lfo_shape.kr(1) - 1;
+            var lfoRate  = Lag.kr(\lfo_rate.kr(1.0).clip(0.01, 20.0), 0.03);
+            var lfoDepth = Lag.kr(\lfo_depth.kr(0.0).clip(-4.0, 4.0), 0.03);
+            var env, lfo, freqL, freqR, driveComp;
 
-    filtSig = [procL, procR];
+            inSig = In.ar(inBus, 2);
 
-    // DC Offset Leakage Protection
-    filtSig = LeakDC.ar(filtSig);
+            env = Amplitude.kr(Mix.ar(inSig) * 0.5 * envSens, envAtk, envRel).clip(0.0, 1.0);
 
-    // Smooth Dry/Wet Crossfade
-    finalSig = XFade2.ar(inSig, filtSig, m_mix.linlin(0.0, 1.0, -1.0, 1.0));
+            lfo = Select.kr(lfoShape, [
+                SinOsc.kr(lfoRate),
+                LFTri.kr(lfoRate),
+                LFSaw.kr(lfoRate),
+                (LFPulse.kr(lfoRate) * 2) - 1,
+                LFNoise0.kr(lfoRate),   // stepped sample & hold
+                LFNoise2.kr(lfoRate)    // smooth noise
+            ]);
+            // Light lag so square and s&h steps don't click the filter.
+            lfo = Lag.kr(lfo, 0.005);
 
-    ReplaceOut.ar(outBus, finalSig);
-}).add;
+            cutoff = (cutoff * (2 ** ((env * envAmt) + (lfo * lfoDepth)))).clip(20, 20000);
+
+            // Offset L/R cutoff by spread.
+            freqL = (cutoff * (1 - (spread * 0.35))).clip(20, 20000);
+            freqR = (cutoff * (1 + (spread * 0.35))).clip(20, 20000);
+
+            // Level compensation for tanh drive.
+            driveComp = 1 / drive.sqrt;
+
+            // Pre-filter drive.
+            procL = Select.ar(driveMode >= 1, [inSig[0], (inSig[0] * drive).tanh * driveComp]);
+            procR = Select.ar(driveMode >= 1, [inSig[1], (inSig[1] * drive).tanh * driveComp]);
+
+            procL = DFM1.ar(procL, freqL, res, dfmGain, type, noise);
+            procR = DFM1.ar(procR, freqR, res, dfmGain, type, noise);
+
+            // Post-filter drive, tames self-oscillation peaks.
+            procL = Select.ar(driveMode >= 2, [procL, (procL * drive).tanh * driveComp]);
+            procR = Select.ar(driveMode >= 2, [procR, (procR * drive).tanh * driveComp]);
+
+            filtSig = LeakDC.ar([procL, procR]);
+
+            // Dry/wet handled by the fx framework's replacer on the insert slot.
+            Out.ar(outBus, filtSig);
+        }).add;
+    }
+}

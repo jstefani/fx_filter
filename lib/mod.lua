@@ -1,4 +1,4 @@
--- fx_filter: DFM1 filter plugin for sixolet's fx mod framework.
+-- fx_filter: multimode filter plugin for sixolet's fx mod framework.
 
 local fx = require("fx/lib/fx")
 local mod = require 'core/mods'
@@ -6,6 +6,9 @@ local mod = require 'core/mods'
 local FxFilter = fx:new{
   subpath = "/fx_filter"
 }
+
+-- Order matches FxFilter.modelSymbols in filter.sc.
+local MODELS = {"dfm1", "moog ff", "svf", "rlpf", "bmoog"}
 
 -- Clock divisions for synced LFO. Beats assume 4/4 (1 bar = 4 beats).
 local LFO_DIVS = {
@@ -83,35 +86,68 @@ function FxFilter:update_lfo_mode()
   _menu.rebuild_params()
 end
 
+-- Model switch rebuilds the synth on the SC side. Input gain and noise are
+-- DFM1-only, so hide them for the other models.
+function FxFilter:update_model(val)
+  osc.send({ "localhost", 57120 }, self.subpath .. "/model", { val })
+  if val == 1 then
+    params:show("fx_filter_dfm_gain")
+    params:show("fx_filter_noise")
+  else
+    params:hide("fx_filter_dfm_gain")
+    params:hide("fx_filter_noise")
+  end
+  _menu.rebuild_params()
+end
+
 function FxFilter:add_params()
   params:add_separator("fx_filter", "fx filter")
   self:add_slot("fx_filter_slot", "slot")
 
-  params:add_group("fx_filter_grp_filter", "filter", 6)
+  params:add_group("fx_filter_grp_filter", "filter", 8)
+  params:add_option("fx_filter_model", "model", MODELS, 1)
+  params:set_action("fx_filter_model", function(val) self:update_model(val) end)
   self:add_control("fx_filter_cutoff", "cutoff", "cutoff",
     controlspec.new(20, 20000, 'exp', 0, 1000, "Hz"))
   self:add_control("fx_filter_res", "resonance", "res",
     controlspec.new(0, 1.2, 'lin', 0.01, 0.1, ""))
-  self:add_option("fx_filter_type", "type", "type", {"lowpass", "highpass"}, 1)
+  self:add_option("fx_filter_type", "type", "type",
+    {"lowpass", "highpass", "bandpass", "notch"}, 1)
+  self:add_control("fx_filter_width", "width", "width",
+    controlspec.new(0.1, 4, 'lin', 0.1, 1, "oct"))
   self:add_taper("fx_filter_dfm_gain", "input gain", "dfm_gain", 0.1, 8, 1, 1, "")
   self:add_control("fx_filter_stereo_spread", "stereo spread", "stereo_spread",
     controlspec.new(0, 1, 'lin', 0.01, 0, ""))
   self:add_control("fx_filter_noise", "noise", "noise",
     controlspec.new(0, 0.005, 'lin', 0.0001, 0.0003, ""))
 
-  params:add_group("fx_filter_grp_drive", "drive", 2)
+  params:add_group("fx_filter_grp_drive", "drive", 4)
   self:add_option("fx_filter_drive_mode", "drive mode", "drive_mode",
     {"off", "pre-filter", "post-filter"}, 1)
+  self:add_option("fx_filter_drive_type", "drive type", "drive_type",
+    {"tanh", "soft", "hard", "asym", "fold"}, 1)
   self:add_taper("fx_filter_drive_amount", "drive amount", "drive_amount", 1, 8, 1, 1, "")
+  self:add_control("fx_filter_drive_tone", "drive tone", "drive_tone",
+    controlspec.new(-1, 1, 'lin', 0.01, 0, ""))
 
-  params:add_group("fx_filter_grp_env", "envelope", 4)
+  params:add_group("fx_filter_grp_env", "envelope", 9)
   self:add_control("fx_filter_env_amount", "env > cutoff", "env_amount",
     controlspec.new(-4, 4, 'lin', 0.05, 0, "oct"))
+  self:add_control("fx_filter_env_res", "env > res", "env_res",
+    controlspec.new(-1, 1, 'lin', 0.01, 0, ""))
+  self:add_control("fx_filter_env_drive", "env > drive", "env_drive",
+    controlspec.new(0, 7, 'lin', 0.1, 0, ""))
+  self:add_option("fx_filter_env_source", "env source", "env_source",
+    {"sum", "left", "right"}, 1)
+  self:add_control("fx_filter_env_threshold", "env threshold", "env_threshold",
+    controlspec.new(0, 0.95, 'lin', 0.01, 0, ""))
+  self:add_option("fx_filter_env_polarity", "env polarity", "env_polarity",
+    {"normal", "inverted"}, 1)
   self:add_taper("fx_filter_env_sens", "env sensitivity", "env_sens", 0, 20, 2, 1, "")
   self:add_taper("fx_filter_env_attack", "env attack", "env_attack", 0.001, 1, 0.01, 4, "s")
   self:add_taper("fx_filter_env_release", "env release", "env_release", 0.01, 2, 0.2, 3, "s")
 
-  params:add_group("fx_filter_grp_lfo", "lfo", 5)
+  params:add_group("fx_filter_grp_lfo", "lfo", 8)
   self:add_option("fx_filter_lfo_shape", "lfo shape", "lfo_shape",
     {"sine", "triangle", "saw", "square", "s&h", "noise"}, 1)
   params:add_option("fx_filter_lfo_mode", "lfo mode", {"free", "sync"}, 1)
@@ -128,6 +164,12 @@ function FxFilter:add_params()
   params:set_action("fx_filter_lfo_depth", function(val)
     self:send("lfo_depth", val / 127 * 4)
   end)
+  self:add_control("fx_filter_lfo_res", "lfo > res", "lfo_res",
+    controlspec.new(-1, 1, 'lin', 0.01, 0, ""))
+  self:add_control("fx_filter_lfo_phase", "lfo stereo phase", "lfo_phase",
+    controlspec.new(0, 180, 'lin', 1, 0, "deg"))
+  self:add_option("fx_filter_lfo_polarity", "lfo polarity", "lfo_polarity",
+    {"bipolar", "unipolar"}, 1)
 
   params:add_group("fx_filter_grp_out", "output", 2)
   self:add_control("fx_filter_out_gain", "level", "out_gain",

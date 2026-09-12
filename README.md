@@ -125,6 +125,17 @@ High resonance and drive can get loud. `limiter` is a lookahead brickwall at -0.
 
 `lib/filter.sc` is a SuperCollider class (`FxFilter : FxBase`), compiled into the sclang class library on norns. After editing it, restart norns or recompile the class library. One `makeDef` builds every model's SynthDef from a shared modulation and drive skeleton; each model plugs in a small filter core. `lib/mod.lua` adds the params and drives the clock sync. Params travel over OSC on `/fx_filter/set`; model changes go to `/fx_filter/model`, which frees and recreates the synth on the current slot.
 
+### Checks
+
+CI runs on every push: `luacheck lib` and a headless sclang that compiles `lib/filter.sc` against the fx framework classes, builds all five model SynthDefs, and checks every param key has a matching control. Run the SC check locally with SuperCollider installed:
+
+```
+git clone --depth 1 https://github.com/sixolet/fx.git /tmp/fx
+SCLANG=/Applications/SuperCollider.app/Contents/MacOS/sclang ci/check_sc.sh /tmp/fx/lib <dir with sc3-plugins class files>
+```
+
+On Linux `sc3-plugins-language` from apt provides the class files and no extra dir is needed.
+
 ## Credits
 
 - [sixolet](https://llllllll.co/u/sixolet) for the fx mod framework

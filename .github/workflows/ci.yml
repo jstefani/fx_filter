@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lua:
+    name: luacheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install luacheck
+        run: sudo apt-get update && sudo apt-get install -y lua-check
+      - name: Lint
+        run: luacheck lib
+
+  supercollider:
+    name: sclang compile + synthdefs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SuperCollider and sc3-plugins class files
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y supercollider-language sc3-plugins-language xvfb
+      - name: Fetch fx mod framework (FxBase, FxSetup)
+        run: git clone --depth 1 https://github.com/sixolet/fx.git "$RUNNER_TEMP/fx"
+      - name: Build synthdefs headless
+        run: ci/check_sc.sh "$RUNNER_TEMP/fx/lib"

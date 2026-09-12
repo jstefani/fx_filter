@@ -100,6 +100,56 @@ function FxFilter:update_model(val)
   _menu.rebuild_params()
 end
 
+local function rnd(lo, hi)
+  return lo + (math.random() * (hi - lo))
+end
+
+local function pick(...)
+  local t = { ... }
+  return t[math.random(#t)]
+end
+
+-- Dice the modulation and drive params inside musical ranges. Leaves
+-- model, type, cutoff, resonance, slot and output untouched, so it never
+-- changes what the filter fundamentally is or jumps the level.
+function FxFilter:randomize_mod()
+  params:set("fx_filter_env_amount", rnd(-2, 2))
+  params:set("fx_filter_env_res", rnd(-0.3, 0.3))
+  params:set("fx_filter_env_drive", rnd(0, 3))
+  params:set("fx_filter_env_source", 1)
+  params:set("fx_filter_env_threshold", rnd(0, 0.3))
+  params:set("fx_filter_env_polarity", pick(1, 1, 1, 2))
+  params:set("fx_filter_env_sens", rnd(1, 6))
+  params:set("fx_filter_env_attack", rnd(0.001, 0.05))
+  params:set("fx_filter_env_release", rnd(0.1, 0.8))
+
+  params:set("fx_filter_lfo_shape", math.random(6))
+  if self:lfo_synced() then
+    params:set("fx_filter_lfo_div", math.random(3, 10))  -- 1 bar .. 1/8
+  else
+    params:set("fx_filter_lfo_rate", rnd(0.1, 4))
+  end
+  params:set("fx_filter_lfo_depth", math.random(-60, 60))
+  params:set("fx_filter_lfo_res", rnd(-0.3, 0.3))
+  params:set("fx_filter_lfo_phase", pick(0, 0, 90, 180))
+  params:set("fx_filter_lfo_polarity", math.random(2))
+
+  params:set("fx_filter_drive_mode", math.random(3))
+  params:set("fx_filter_drive_type", math.random(5))
+  params:set("fx_filter_drive_amount", rnd(1, 4))
+  params:set("fx_filter_drive_tone", rnd(-0.5, 0.5))
+end
+
+-- Same, plus the filter itself. Cutoff 100 Hz .. 8 kHz on a log scale,
+-- resonance stays under self-oscillation.
+function FxFilter:randomize_all()
+  self:randomize_mod()
+  params:set("fx_filter_cutoff", 100 * (2 ^ rnd(0, 6.3)))
+  params:set("fx_filter_res", rnd(0, 0.9))
+  params:set("fx_filter_type", math.random(4))
+  params:set("fx_filter_width", rnd(0.5, 3))
+end
+
 function FxFilter:add_params()
   params:add_separator("fx_filter", "fx filter")
   self:add_slot("fx_filter_slot", "slot")
@@ -170,6 +220,12 @@ function FxFilter:add_params()
     controlspec.new(0, 180, 'lin', 1, 0, "deg"))
   self:add_option("fx_filter_lfo_polarity", "lfo polarity", "lfo_polarity",
     {"bipolar", "unipolar"}, 1)
+
+  params:add_group("fx_filter_grp_random", "random", 2)
+  params:add_trigger("fx_filter_randomize_mod", "randomize mod")
+  params:set_action("fx_filter_randomize_mod", function() self:randomize_mod() end)
+  params:add_trigger("fx_filter_randomize_all", "randomize all")
+  params:set_action("fx_filter_randomize_all", function() self:randomize_all() end)
 
   params:add_group("fx_filter_grp_out", "output", 2)
   self:add_control("fx_filter_out_gain", "level", "out_gain",

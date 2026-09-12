@@ -13,6 +13,7 @@ Features:
 - input envelope follower with source, threshold and invert, to cutoff, resonance and drive
 - stereo LFO with phase offset and polarity, free-running or synced to the norns clock, to cutoff and resonance
 - output level with limiter or soft clip
+- randomize triggers for modulation, or everything, MIDI-mappable
 - all params smoothed, MIDI-mappable, and saved with PSETs
 
 ## Requirements
@@ -111,6 +112,15 @@ In **sync** mode the rate follows the norns clock tempo and the LFO phase restar
 In **free** mode the LFO runs at the set rate and ignores the clock.
 
 Stereo phase offsets the right channel's LFO along the same cycle, so a synced sine at 180° sweeps L and R in opposite directions on the beat. For the noise shape the right channel blends toward an independent generator as the offset grows.
+
+### random
+
+| param | notes |
+| --- | --- |
+| randomize mod | dices envelope, lfo and drive inside musical ranges; leaves model, type, cutoff, resonance, slot and output alone |
+| randomize all | same, plus cutoff (100 Hz..8 kHz), resonance (under self-oscillation), type and width |
+
+Both are triggers: select and press <kbd>K3</kbd>. They are ordinary params, so they can be MIDI-mapped in `PARAMETERS > MAP` or fired by another mod or script with `params:set("fx_filter_randomize_mod", 1)`. In sync mode the LFO gets a division between 1 bar and 1/8 instead of a rate. Results save with the PSET like any other values.
 
 ### output
 
